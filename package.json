@@ -1,6 +1,29 @@
 {
   "name": "auto-server-client",
   "version": "0.1.1",
+  "description": "A unified, secure data-access layer for Next.js App Router that eliminates the need to write individual Server Actions for every API request",
+  "keywords": [
+    "nextjs",
+    "next.js",
+    "app-router",
+    "server-actions",
+    "api-client",
+    "react-hooks",
+    "ssr",
+    "typescript",
+    "authentication",
+    "proxy"
+  ],
+  "author": "Prabal Goyal",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prabal-goyal/next-server-client.git"
+  },
+  "homepage": "https://github.com/prabal-goyal/next-server-client#readme",
+  "bugs": {
+    "url": "https://github.com/prabal-goyal/next-server-client/issues"
+  },
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,12 +35,13 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "next dev",
-    "start": "next start",
+    "prepublishOnly": "npm run build",
     "lint": "eslint"
   },
   "dependencies": {
