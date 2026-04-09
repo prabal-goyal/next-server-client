@@ -4,4 +4,5 @@ export { useAutoQuery } from "./client/useAutoQuery"
 export { useAutoMutation } from "./client/useAutoMutation"
 
 export { serverQuery } from "./server/serverQuery"
+export { createProxyHandler } from "./server/createProxyHandler"
 

@@ -20,75 +20,15 @@ npm install auto-server-client
 
 ### 1. Create the Proxy Route
 
-Create a proxy route handler in your Next.js app at `app/api/proxy/route.ts`:
+Create `app/api/proxy/route.ts` in your Next.js app:
 
 ```typescript
-import { createServerClient } from "auto-server-client";
-import { cookies } from "next/headers";
-import { NextRequest, NextResponse } from "next/server";
+import { createProxyHandler } from "auto-server-client";
 
-const ALLOWED_METHODS = ["GET", "POST", "PUT", "DELETE"];
-
-export async function POST(req: NextRequest) {
-  let payload;
-
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body" },
-      { status: 400 }
-    );
-  }
-
-  const { method, path, body } = payload ?? {};
-
-  if (!ALLOWED_METHODS.includes(method)) {
-    return NextResponse.json(
-      { error: "Invalid method" },
-      { status: 400 }
-    );
-  }
-
-  if (typeof path !== "string" || !path.startsWith("/")) {
-    return NextResponse.json(
-      { error: "Invalid path" },
-      { status: 400 }
-    );
-  }
-
-  const serverClient = createServerClient({
-    baseURL: process.env.API_URL!,
-    getToken: async () => (await cookies()).get("accessToken")?.value,
-  });
-
-  try {
-    let data;
-
-    switch (method) {
-      case "GET":
-        data = await serverClient.get(path);
-        break;
-      case "POST":
-        data = await serverClient.post(path, body);
-        break;
-      case "PUT":
-        data = await serverClient.put(path, body);
-        break;
-      case "DELETE":
-        data = await serverClient.delete(path);
-        break;
-    }
-
-    return NextResponse.json(data);
-  } catch (error) {
-    return NextResponse.json(
-      { error: "Request failed" },
-      { status: 500 }
-    );
-  }
-}
+export const POST = createProxyHandler();
 ```
+
+That's it. The handler reads `process.env.API_URL` and the `accessToken` cookie automatically.
 
 ### 2. Set Environment Variables
 
@@ -168,6 +108,26 @@ export default async function TodoPage() {
 > If you need different token handling or cookie names, create a custom helper (see [Custom Server Query](#custom-server-query) section).
 
 ## API Reference
+
+### `createProxyHandler()`
+
+Creates a Next.js route handler for the proxy endpoint. Use this to register the `/api/proxy` route in your app with a single line.
+
+**Returns:** A `POST` route handler function compatible with Next.js App Router.
+
+**Requirements:**
+- `process.env.API_URL` must be set
+- An `accessToken` cookie is used for authentication (read server-side)
+
+**Example:**
+```typescript
+// app/api/proxy/route.ts
+import { createProxyHandler } from "auto-server-client";
+
+export const POST = createProxyHandler();
+```
+
+---
 
 ### `createServerClient(config)`
 
@@ -257,36 +217,6 @@ const user = await serverQuery<User>("/users/1");
 
 ## Advanced Usage
 
-### Custom Server Query Helper
-
-If the default `serverQuery` doesn't match your setup (different cookie name, token source, etc.), create your own helper:
-
-```typescript
-// lib/server-query.ts
-import { cookies } from "next/headers";
-import { createServerClient } from "auto-server-client";
-
-export async function serverQuery<T>(path: string): Promise<T> {
-  const client = createServerClient({
-    baseURL: process.env.API_URL!,
-    getToken: async () => (await cookies()).get("accessToken")?.value,
-  });
-
-  return client.get<T>(path);
-}
-```
-
-Then use it in Server Components:
-
-```typescript
-import { serverQuery } from "@/lib/server-query";
-
-export default async function Page() {
-  const data = await serverQuery("/users");
-  return <div>{/* render data */}</div>;
-}
-```
-
 ### Custom Token Retrieval
 
 You can customize how tokens are retrieved based on your authentication setup:
@@ -339,8 +269,8 @@ try {
 
 ## How It Works
 
-1. **Client Components**: Components call hooks (`useAutoQuery`/`useAutoMutation`) which send requests to `/api/proxy`
-2. **Proxy Route**: The proxy route receives the request, extracts the token from cookies, and forwards the request to your API
+1. **Client Components**: Hooks (`useAutoQuery`/`useAutoMutation`) POST to `/api/proxy` with `{ method, path, body }`
+2. **Proxy Route**: Registered in your app via `createProxyHandler()` — reads the token from cookies server-side and forwards the request to your API
 3. **Server Components**: Use `serverQuery` or `createServerClient` directly to fetch data during SSR
 4. **Token Injection**: Tokens are automatically injected as Bearer tokens in the `Authorization` header
 
