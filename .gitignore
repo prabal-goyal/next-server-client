@@ -50,3 +50,6 @@ next-env.d.ts
 /postcss.config.mjs
 /next.config.ts
 /eslint.config.mjs
+
+# Claude Code
+CLAUDE.md

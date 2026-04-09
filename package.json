@@ -1,6 +1,6 @@
 {
   "name": "auto-server-client",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A unified, secure data-access layer for Next.js App Router that eliminates the need to write individual Server Actions for every API request",
   "keywords": [
     "nextjs",
@@ -44,20 +44,17 @@
     "prepublishOnly": "npm run build",
     "lint": "eslint"
   },
-  "dependencies": {
-    "next": "16.1.1",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+  "peerDependencies": {
+    "next": ">=14",
+    "react": ">=18"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@eslint/js": "^9.39.4",
     "@types/node": "^20",
     "@types/react": "^19",
-    "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.1",
-    "tailwindcss": "^4",
     "tsup": "^8.5.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "^8.58.1"
   }
 }
