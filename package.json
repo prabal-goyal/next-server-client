@@ -1,6 +1,6 @@
 {
   "name": "auto-server-client",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A unified, secure data-access layer for Next.js App Router that eliminates the need to write individual Server Actions for every API request",
   "keywords": [
     "nextjs",
