@@ -26,7 +26,7 @@ export function createServerClient(
 
 
 		if (config.getToken) {
-			const token = config.getToken()
+			const token = await config.getToken()
 			if (token) {
 				headers.set("Authorization", `Bearer ${token}`)
 			}

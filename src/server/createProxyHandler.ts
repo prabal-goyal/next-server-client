@@ -1,11 +1,26 @@
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { createServerClient } from "../createServerClient"
+import { allow, type Guard } from "./guards"
 
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "DELETE"])
 
-export function createProxyHandler() {
+type ProxyHandlerOptions = {
+	guard?: Guard
+	guards?: Record<string, Guard>
+	default?: Guard
+}
+
+export function createProxyHandler(options?: ProxyHandlerOptions) {
 	return async function POST(req: Request): Promise<Response> {
+		// Global guard runs before we even parse the body
+		if (options?.guard) {
+			const result = await options.guard()
+			if ("deny" in result) {
+				return NextResponse.json({ error: "Unauthorized" }, { status: result.deny })
+			}
+		}
+
 		let payload: { method?: unknown; path?: unknown; body?: unknown }
 
 		try {
@@ -22,6 +37,16 @@ export function createProxyHandler() {
 
 		if (typeof path !== "string" || !path.startsWith("/")) {
 			return NextResponse.json({ error: "Invalid path" }, { status: 400 })
+		}
+
+		// Per-path guard: look up "METHOD /path", fall back to default
+		if (options?.guards) {
+			const key = `${method} ${path}`
+			const guard = options.guards[key] ?? options.default ?? allow()
+			const result = await guard()
+			if ("deny" in result) {
+				return NextResponse.json({ error: "Unauthorized" }, { status: result.deny })
+			}
 		}
 
 		const client = createServerClient({

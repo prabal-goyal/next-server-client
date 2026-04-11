@@ -1,14 +1,14 @@
 # auto-server-client
 
-A unified, secure data-access layer for Next.js App Router that eliminates the need to write individual Server Actions for every API request.
+A unified, secure data-access layer for Next.js App Router. One client that works in Server Components, Client Components, and Route Handlers — with no configuration required.
 
 ## Features
 
-- 🔒 **Secure by default** - Tokens and secrets never leave the server
-- 🎯 **Single API client** - One configuration, use everywhere
-- 🪝 **React hooks** - `useAutoQuery` and `useAutoMutation` for client components
-- 📄 **SSR support** - `serverQuery` helper for Server Components
-- 🚀 **Zero boilerplate** - No need to write Server Actions for each endpoint
+- **Universal client** — same API everywhere, context detected automatically
+- **Secure by default** — tokens never leave the server
+- **End-to-end type safety** — schema-first typed paths and responses
+- **Auth guards** — protect proxy routes without touching business logic
+- **React hooks** — `useAutoQuery` and `useAutoMutation` for client components
 
 ## Installation
 
@@ -16,279 +16,265 @@ A unified, secure data-access layer for Next.js App Router that eliminates the n
 npm install auto-server-client
 ```
 
-## Quick Start
+## Setup
 
-### 1. Create the Proxy Route
-
-Create `app/api/proxy/route.ts` in your Next.js app:
-
-```typescript
-import { createProxyHandler } from "auto-server-client";
-
-export const POST = createProxyHandler();
-```
-
-That's it. The handler reads `process.env.API_URL` and the `accessToken` cookie automatically.
-
-### 2. Set Environment Variables
-
-Add your API base URL to `.env.local`:
+### 1. Set environment variable
 
 ```env
 API_URL=https://api.example.com
 ```
 
-### 3. Use in Your Components
+### 2. Create the proxy route
 
-#### Client Components (with hooks)
-
-```typescript
-"use client";
-
-import { useAutoQuery, useAutoMutation } from "auto-server-client";
-
-export default function TodoList() {
-  // Fetch data
-  const { data, loading, error } = useAutoQuery("/todos");
-
-  // Mutate data
-  const { mutate, loading: isCreating } = useAutoMutation("/todos", "POST");
-
-  const handleCreate = async () => {
-    try {
-      const newTodo = await mutate({ title: "New Todo", completed: false });
-      console.log("Created:", newTodo);
-    } catch (error) {
-      console.error("Failed to create:", error);
-    }
-  };
-
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error}</div>;
-
-  return (
-    <div>
-      <button onClick={handleCreate} disabled={isCreating}>
-        Create Todo
-      </button>
-      <ul>
-        {data?.map((todo: any) => (
-          <li key={todo.id}>{todo.title}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-```
-
-#### Server Components
-
-The package exports a `serverQuery` helper that works out of the box if your token is stored in a cookie named `accessToken`:
-
-```typescript
-import { serverQuery } from "auto-server-client";
-
-export default async function TodoPage() {
-  // This runs on the server and can access cookies/headers securely
-  const todo = await serverQuery("/todos/1");
-
-  return (
-    <div>
-      <h1>{todo.title}</h1>
-      <p>Status: {todo.completed ? "Done" : "Pending"}</p>
-    </div>
-  );
-}
-```
-
-> **Note:** The default `serverQuery` expects:
-> - `process.env.API_URL` to be set
-> - An `accessToken` cookie for authentication
-> 
-> If you need different token handling or cookie names, create a custom helper (see [Custom Server Query](#custom-server-query) section).
-
-## API Reference
-
-### `createProxyHandler()`
-
-Creates a Next.js route handler for the proxy endpoint. Use this to register the `/api/proxy` route in your app with a single line.
-
-**Returns:** A `POST` route handler function compatible with Next.js App Router.
-
-**Requirements:**
-- `process.env.API_URL` must be set
-- An `accessToken` cookie is used for authentication (read server-side)
-
-**Example:**
-```typescript
+```ts
 // app/api/proxy/route.ts
-import { createProxyHandler } from "auto-server-client";
+import { createProxyHandler } from "auto-server-client"
 
-export const POST = createProxyHandler();
+export const POST = createProxyHandler()
+```
+
+That's it. The handler reads `API_URL` and the `accessToken` cookie automatically.
+
+---
+
+## Universal Client
+
+`createAutoClient()` detects whether it's running on the server or in the browser and picks the right strategy automatically:
+
+- **Server** (Server Component, Route Handler) → calls the external API directly
+- **Browser** (Client Component) → routes through `/api/proxy`, keeping the token server-only
+
+```ts
+// works in a Server Component, Client Component, or Route Handler — identical code
+const client = createAutoClient()
+
+const posts = await client.get("/posts")
+const post  = await client.post("/posts", { title: "Hello" })
+await client.put("/posts/1", { title: "Updated" })
+await client.delete("/posts/1")
+```
+
+> When called inside a Client Component the request is triggered from the browser and routed through `/api/proxy`. The token is never exposed — the proxy reads it server-side before forwarding.
+
+---
+
+## End-to-End Type Safety
+
+Pass a schema type to `createAutoClient()` to get typed paths, typed responses, and typed request bodies.
+
+```ts
+// lib/api.ts
+import { createAutoClient } from "auto-server-client"
+
+type MyApi = {
+  GET: {
+    "/posts":     { response: Post[] }
+    "/users/me":  { response: User }
+  }
+  POST: {
+    "/posts": { body: CreatePostInput; response: Post }
+  }
+  DELETE: {
+    "/posts": { response: void }
+  }
+}
+
+export const client = createAutoClient<MyApi>()
+```
+
+```ts
+const posts = await client.get("/posts")         // Post[]  — inferred, no cast needed
+const user  = await client.get("/users/me")      // User    — inferred
+
+await client.post("/posts", { title: "Hello" })  // body must be CreatePostInput
+
+await client.get("/wrong")                       // compile error — not in schema
+await client.post("/posts", { nme: "Hi" })       // compile error — wrong body shape
+```
+
+Without a schema, the client behaves as before — any path, manual type cast:
+
+```ts
+const client = createAutoClient()
+const data = await client.get<Post[]>("/posts")
 ```
 
 ---
 
-### `createServerClient(config)`
+## Auth Guards
 
-Creates a server-side API client with automatic token injection.
+Guards run inside `createProxyHandler()` before any request is forwarded to the external API.
 
-**Parameters:**
-- `config.baseURL` (string, required): Base URL for your API
-- `config.getToken` (function, optional): Async function that returns the authentication token
+### Protect all routes
 
-**Returns:** `ServerClient` object with methods: `get`, `post`, `put`, `delete`
+```ts
+import { createProxyHandler, requireAuth } from "auto-server-client"
 
-**Example:**
-```typescript
-const client = createServerClient({
-  baseURL: "https://api.example.com",
-  getToken: async () => {
-    const cookies = await import("next/headers").then(m => m.cookies());
-    return cookies.get("accessToken")?.value;
+export const POST = createProxyHandler({
+  guard: requireAuth(), // returns 401 if accessToken cookie is missing
+})
+```
+
+### Mixed public and protected routes
+
+```ts
+import { createProxyHandler, requireAuth, allow } from "auto-server-client"
+
+export const POST = createProxyHandler({
+  guards: {
+    "GET /posts":    allow(),        // public
+    "POST /posts":   requireAuth(),  // must be logged in
+    "DELETE /posts": requireAuth(),  // must be logged in
   },
-});
-
-const data = await client.get("/users");
+  default: allow(), // paths not listed are public
+})
 ```
 
-### `useAutoQuery<T>(path)`
+Flip `default` to protect everything unless explicitly allowed:
 
-React hook for fetching data in client components.
+```ts
+export const POST = createProxyHandler({
+  guards: {
+    "GET /posts": allow(), // the only public route
+  },
+  default: requireAuth(), // everything else requires auth
+})
+```
 
-**Parameters:**
-- `path` (string): API endpoint path (e.g., "/users/123")
+### Custom guard
 
-**Returns:**
-```typescript
-{
-  data?: T;
-  loading: boolean;
-  error?: string;
+```ts
+import { defineGuard } from "auto-server-client"
+import { cookies } from "next/headers"
+
+const myGuard = defineGuard(async () => {
+  const token = (await cookies()).get("accessToken")?.value
+  if (!token) return { deny: 401 }
+
+  const payload = verifyJwt(token)
+  if (!payload) return { deny: 401 }
+
+  return { allow: true }
+})
+
+export const POST = createProxyHandler({ guard: myGuard })
+```
+
+> Role-based access control (admin, editor, etc.) should stay in your backend. Guards at the proxy layer only answer one question: **is there a valid session?**
+
+---
+
+## React Hooks
+
+For Client Components that need reactive state (loading, error, re-fetching).
+
+### `useAutoQuery`
+
+```ts
+"use client"
+
+import { useAutoQuery } from "auto-server-client"
+
+export default function PostList() {
+  const { data, loading, error } = useAutoQuery<Post[]>("/posts")
+
+  if (loading) return <p>Loading...</p>
+  if (error)   return <p>Error: {error}</p>
+
+  return <ul>{data?.map(p => <li key={p.id}>{p.title}</li>)}</ul>
 }
 ```
 
-**Example:**
-```typescript
-const { data, loading, error } = useAutoQuery<User>("/users/1");
-```
+### `useAutoMutation`
 
-### `useAutoMutation<T>(path, method)`
+```ts
+"use client"
 
-React hook for mutations in client components.
+import { useAutoMutation } from "auto-server-client"
 
-**Parameters:**
-- `path` (string): API endpoint path
-- `method` ("POST" | "PUT" | "DELETE"): HTTP method
+export default function CreatePost() {
+  const { mutate, loading } = useAutoMutation<Post>("/posts", "POST")
 
-**Returns:**
-```typescript
-{
-  mutate: (body?: unknown) => Promise<T>;
-  data?: T;
-  loading: boolean;
-  error?: string;
+  return (
+    <button
+      disabled={loading}
+      onClick={() => mutate({ title: "New Post" })}
+    >
+      Create
+    </button>
+  )
 }
 ```
 
-**Example:**
-```typescript
-const { mutate, loading } = useAutoMutation<User>("/users", "POST");
-const newUser = await mutate({ name: "John", email: "john@example.com" });
-```
+---
+
+## API Reference
+
+### `createAutoClient<Schema>()`
+
+Returns a universal client. Detects server vs. browser at runtime.
+
+| Method | Signature |
+|---|---|
+| `get` | `(path) => Promise<Response>` |
+| `post` | `(path, body) => Promise<Response>` |
+| `put` | `(path, body) => Promise<Response>` |
+| `delete` | `(path) => Promise<Response>` |
+
+### `createProxyHandler(options?)`
+
+Creates the Next.js `POST` route handler for `/api/proxy`.
+
+| Option | Type | Description |
+|---|---|---|
+| `guard` | `Guard` | Runs on every request |
+| `guards` | `Record<"METHOD /path", Guard>` | Per-path guards |
+| `default` | `Guard` | Fallback when no per-path guard matches. Defaults to `allow()` |
+
+### `requireAuth()`
+
+Returns `401` if the `accessToken` cookie is missing.
+
+### `allow()`
+
+Always passes. Use to explicitly mark a route as public in a `guards` map.
 
 ### `serverQuery<T>(path)`
 
-Helper function for fetching data in Server Components.
+One-line server-side fetch for Server Components. Reads `API_URL` and `accessToken` cookie automatically.
 
-**Parameters:**
-- `path` (string): API endpoint path
-
-**Returns:** `Promise<T>`
-
-**Requirements:**
-- `process.env.API_URL` must be set
-- An `accessToken` cookie must be present (for authenticated requests)
-
-**Example:**
-```typescript
-const user = await serverQuery<User>("/users/1");
+```ts
+const user = await serverQuery<User>("/users/me")
 ```
 
-## Advanced Usage
+### `createServerClient(config)`
 
-### Custom Token Retrieval
+Low-level server-side client for custom token handling.
 
-You can customize how tokens are retrieved based on your authentication setup:
-
-```typescript
-import { headers } from "next/headers";
-
+```ts
 const client = createServerClient({
   baseURL: process.env.API_URL!,
-  getToken: async () => {
-    const headersList = await headers();
-    return headersList.get("authorization")?.replace("Bearer ", "");
-  },
-});
+  getToken: async () => (await cookies()).get("myToken")?.value,
+})
 ```
 
-### Error Handling
-
-The hooks return error states you can handle:
-
-```typescript
-const { data, error, loading } = useAutoQuery("/todos");
-
-if (error) {
-  // Handle error - show toast, redirect, etc.
-  return <ErrorComponent message={error} />;
-}
-```
-
-For mutations, wrap in try/catch:
-
-```typescript
-const { mutate } = useAutoMutation("/todos", "POST");
-
-try {
-  await mutate({ title: "New Todo" });
-} catch (error) {
-  // Handle error
-  console.error("Mutation failed:", error);
-}
-```
-
-## Security Considerations
-
-- ✅ **Tokens are server-only**: The `getToken` function runs on the server, so tokens never appear in client-side code
-- ✅ **Proxy validation**: The proxy route validates methods and paths before forwarding requests
-- ✅ **Cookie-based auth**: Tokens should be stored in HTTP-only cookies for maximum security
-- ⚠️ **Path validation**: Ensure your proxy validates paths to prevent SSRF attacks
-- ⚠️ **Rate limiting**: Consider adding rate limiting to the proxy route in production
+---
 
 ## How It Works
 
-1. **Client Components**: Hooks (`useAutoQuery`/`useAutoMutation`) POST to `/api/proxy` with `{ method, path, body }`
-2. **Proxy Route**: Registered in your app via `createProxyHandler()` — reads the token from cookies server-side and forwards the request to your API
-3. **Server Components**: Use `serverQuery` or `createServerClient` directly to fetch data during SSR
-4. **Token Injection**: Tokens are automatically injected as Bearer tokens in the `Authorization` header
+```
+Client Component                  Server
+      │                              │
+      │  POST /api/proxy             │
+      │  { method, path, body }      │
+      │─────────────────────────────>│  guard runs (is there a token?)
+      │                              │  token read from cookie
+      │                              │  request forwarded to external API
+      │  { data }                    │
+      │<─────────────────────────────│
+```
 
-## Why Use This?
-
-Traditional Next.js App Router patterns require:
-- Writing a Server Action for every API call
-- Duplicating fetch logic across files
-- Managing tokens in multiple places
-- Client components unable to call authenticated APIs directly
-
-`auto-server-client` solves this by:
-- Providing a single server-side API client
-- Offering secure proxy for client components
-- Providing simple hooks for reads and writes
-- Supporting SSR helpers for Server Components
-
-All without exposing tokens or secrets to the browser.
+Server Components skip the proxy entirely and call the external API in-process.
 
 ## License
 
